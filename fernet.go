@@ -19,6 +19,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"io"
 	"time"
 )
@@ -63,10 +64,10 @@ func decodedLen(n int) int {
 
 // if msg is nil, decrypts in place and returns a slice of tok.
 func verify(msg, tok []byte, ttl time.Duration, now time.Time, k *Key) []byte {
-	if len(tok) < 1 || tok[0] != version {
+	ts, err := ExtractTimestamp(tok)
+	if err != nil {
 		return nil
 	}
-	ts := time.Unix(int64(binary.BigEndian.Uint64(tok[1:])), 0)
 	if ttl > 0 && (now.After(ts.Add(ttl)) || ts.After(now.Add(maxClockSkew))) {
 		return nil
 	}
@@ -119,21 +120,6 @@ func unpad(p []byte) []byte {
 	return p[:len(p)-int(c)]
 }
 
-func b64enc(src []byte) []byte {
-	dst := make([]byte, encoding.EncodedLen(len(src)))
-	encoding.Encode(dst, src)
-	return dst
-}
-
-func b64dec(src []byte) []byte {
-	dst := make([]byte, encoding.DecodedLen(len(src)))
-	n, err := encoding.Decode(dst, src)
-	if err != nil {
-		return nil
-	}
-	return dst[:n]
-}
-
 func genhmac(q, p, k []byte) {
 	h := hmac.New(sha256.New, k)
 	h.Write(p)
@@ -153,6 +139,16 @@ func EncryptAndSign(msg []byte, k *Key) (tok []byte, err error) {
 	tok = make([]byte, encoding.EncodedLen(n))
 	encoding.Encode(tok, b[:n])
 	return tok, nil
+}
+
+// ExtractTimestamp returns the timestamp for the token.
+// This helps decide the token's ttl (time to live)
+func ExtractTimestamp(tok []byte) (time.Time, error) {
+	if len(tok) < 1 || tok[0] != version {
+		return time.Unix(0, 0), errors.New("invalid token")
+	}
+	ts := time.Unix(int64(binary.BigEndian.Uint64(tok[1:])), 0)
+	return ts, nil
 }
 
 // VerifyAndDecrypt verifies that tok is a valid fernet token that was signed
