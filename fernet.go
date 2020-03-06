@@ -19,7 +19,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
-	"errors"
 	"io"
 	"time"
 )
@@ -64,10 +63,10 @@ func decodedLen(n int) int {
 
 // if msg is nil, decrypts in place and returns a slice of tok.
 func verify(msg, tok []byte, ttl time.Duration, now time.Time, k *Key) []byte {
-	ts, err := ExtractTimestamp(tok)
-	if err != nil {
+	if len(tok) < 1 || tok[0] != version {
 		return nil
 	}
+	ts := ExtractTimestamp(tok)
 	if ttl > 0 && (now.After(ts.Add(ttl)) || ts.After(now.Add(maxClockSkew))) {
 		return nil
 	}
@@ -143,12 +142,9 @@ func EncryptAndSign(msg []byte, k *Key) (tok []byte, err error) {
 
 // ExtractTimestamp returns the timestamp for the token.
 // This helps decide the token's ttl (time to live)
-func ExtractTimestamp(tok []byte) (time.Time, error) {
-	if len(tok) < 1 || tok[0] != version {
-		return time.Unix(0, 0), errors.New("invalid token")
-	}
+func ExtractTimestamp(tok []byte) time.Time {
 	ts := time.Unix(int64(binary.BigEndian.Uint64(tok[1:])), 0)
-	return ts, nil
+	return ts
 }
 
 // VerifyAndDecrypt verifies that tok is a valid fernet token that was signed
